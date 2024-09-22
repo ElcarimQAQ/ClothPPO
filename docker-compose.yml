@@ -1,0 +1,20 @@
+version: '3.8'
+services:
+  clothppo:
+    image: elcarimqaq/cloth-funnels:v2.1
+    command: bash
+    environment:
+      - DISPLAY=${DISPLAY}
+      - QT_X11_NO_MITSHM=1
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=graphics,utility,compute
+    volumes:
+      - /home/lbyang/workspace/cloth-funnels:/workspace
+      - /tmp/.X11-unix:/tmp/.X11-unix
+      - /media/lbyang/data:/media/lbyang/data
+      - /dev/dri:/dev/dri
+    shm_size: '64gb'
+    # stdin_open: true
+    tty: true
+    privileged: true
+    runtime: nvidia
