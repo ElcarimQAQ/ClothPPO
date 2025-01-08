@@ -1,7 +1,4 @@
 import logging
-from ssl import ALERT_DESCRIPTION_UNSUPPORTED_EXTENSION
-from threading import active_count
-from cv2 import Mat_DEPTH_MASK, Mat_MAGIC_MASK
 
 from .Memory import Memory
 import numpy as np
@@ -14,25 +11,19 @@ from cloth_funnels.utils.env_utils import (
     shirt_folding_heuristic,
     visualize_action,
     compute_pose,
-    get_largest_component,
     pixels_to_3d_positions,
-    pixel_to_3d,
-    get_pointcloud,
-    find_max_indices,
-    shirt_keypoints)
+    pixel_to_3d)
 from cloth_funnels.learning.utils import deformable_distance
 import torch
 from .exceptions import MoveJointsException
 from cloth_funnels.learning.utils import prepare_image
 from typing import List, Callable
 from itertools import product
-import math
 from cloth_funnels.environment.flex_utils import (
     set_scene,
     get_image,
     get_current_covered_area,
     wait_until_stable,
-    get_camera_matrix,
     PickerPickPlace)
 from cloth_funnels.utils.env_utils import (
     generate_workspace_mask,
@@ -42,19 +33,13 @@ from cloth_funnels.environment.reward import get_reward_and_termination
 from cloth_funnels.tasks.generate_tasks import Task
 from tqdm import tqdm
 import time
-import hashlib
 import imageio
 import os
 import pyflex
 import cv2
-import matplotlib.pyplot as plt
-import pickle
 import random
 import pathlib
-from memory_profiler import profile
-import wandb
 from cloth_funnels.keypoint_detector.keypoint_inference import KeypointDetector
-import pdb
 import gymnasium as gym
 
 def seed_all(seed):
@@ -66,6 +51,9 @@ def seed_all(seed):
     torch.backends.cudnn.benchmark = False
 
 class SimEnv:
+    """
+    Environment for cloth manipulation tasks.
+    """
     def __init__(self,
                  replay_buffer_path: str,
                  obs_dim: int,
@@ -461,6 +449,9 @@ class SimEnv:
         # TODO can probably refactor so args to primitives have better variable names
         return retval
 
+    ##########################################
+    ####### High-level Action primitives #####
+    ##########################################
     def fling_primitive(self, dist, fling_height, fling_speed, cloth_height):
     
         x = cloth_height/2
@@ -697,6 +688,80 @@ class SimEnv:
         self.movep([left_postend_drag_pos, right_postend_drag_pos])
         self.reset_end_effectors()
 
+    #only for the downstream folding purposes
+    def fold(self):
+
+        # print("Cloth mask shape", self.cloth_mask.shape)
+        # pixel_keypoints = shirt_keypoints(self.cloth_mask)
+        keypoint_names = ['left_shoulder', 'right_shoulder', 'top_left', 'top_right', 'bottom_left', 'bottom_right']
+        keypoint_coords = self.keypoint_detector.get_keypoints(self.pretransform_rgb.astype(np.float32)/255)
+
+        pixel_keypoints = {k:v for k,v in zip(keypoint_names, keypoint_coords)}
+
+        # exit(0)
+        pose_matrix = compute_pose(
+                pos=[0, 2, 0],
+                lookat=[0, 0, 0],
+                up=[0, 0, 1])
+        keypoints_3d = {key: pixel_to_3d(self.pretransform_depth, coord[1], coord[0], pose_matrix=pose_matrix) for key, coord in pixel_keypoints.items()}
+
+        # gt_keypoint_indices = self.current_task.get_keypoint_data()
+        # all_positions = pyflex.get_positions().reshape((-1, 4))[:self.num_particles, :3]
+        # keypoints_3d = {key: all_positions[value[0]] for key, value in gt_keypoint_indices.items()}
+        # print(keypoints_3d)
+        # keypoints_3d = {key: value[0] for value in self.current_task.get_k  }
+
+        actions = shirt_folding_heuristic(keypoints_3d)
+        # print(actions)
+        # exit(0)
+        
+        for action in actions:
+
+            if len(action) == 1:
+                a = action[0]
+                pick = a['pick']
+                place = a['place']
+                self.pick_and_place_primitive(pick, place, lift_height=0.25)
+            
+            if len(action) == 2:
+                left_a = action[0]
+                right_a = action[1]
+
+                left_pick = left_a['pick']
+                left_place = left_a['place']
+
+                right_pick = right_a['pick']
+                right_place = right_a['place']
+
+                self.double_arm_pick_and_place_primitive(left_pick, left_place, right_pick, right_place, lift_height=0.25)
+
+        print("[SimEnv] Folding done")
+
+        # print("Terminating")
+        # log = True
+        # while True:
+        #     hashstring = hashlib.sha1()
+        #     hashstring.update(str(time.time()).encode('utf-8'))
+        #     vis_dir = f"{self.log_dir}/videos/{hashstring.hexdigest()[:10]}"
+        #     if not os.path.exists(vis_dir):
+        #         break
+        # pathlib.Path(vis_dir).mkdir(parents=True, exist_ok=True)
+        # for key, frames in self.env_video_frames.items():
+        #     if len(frames) == 0:
+        #         continue
+        #     path = f'{vis_dir}/{key}_{len(frames)}.mp4'
+        #     with imageio.get_writer(path, mode='I', fps=24) as writer:
+        #         for frame in tqdm(frames, desc=f'Dumping {key} frames'):
+        #             writer.append_data(frame)
+                    
+        return 
+
+        # return (retval, self.ray_handle)
+    
+    ##########################################
+    ####### High-level Action primitives #####
+    ##########################################
+      
     def compute_coverage(self):
         return get_current_covered_area(self.num_particles, self.particle_radius)
 
@@ -876,75 +941,7 @@ class SimEnv:
             print("Frame is empty! This shouldn't happen too frequently")
             raise ValueError("Frame is empty")
 
-    #only for the downstream folding purposes
-    def fold(self):
 
-        # print("Cloth mask shape", self.cloth_mask.shape)
-        # pixel_keypoints = shirt_keypoints(self.cloth_mask)
-        keypoint_names = ['left_shoulder', 'right_shoulder', 'top_left', 'top_right', 'bottom_left', 'bottom_right']
-        keypoint_coords = self.keypoint_detector.get_keypoints(self.pretransform_rgb.astype(np.float32)/255)
-
-        pixel_keypoints = {k:v for k,v in zip(keypoint_names, keypoint_coords)}
-
-        # exit(0)
-        pose_matrix = compute_pose(
-                pos=[0, 2, 0],
-                lookat=[0, 0, 0],
-                up=[0, 0, 1])
-        keypoints_3d = {key: pixel_to_3d(self.pretransform_depth, coord[1], coord[0], pose_matrix=pose_matrix) for key, coord in pixel_keypoints.items()}
-
-        # gt_keypoint_indices = self.current_task.get_keypoint_data()
-        # all_positions = pyflex.get_positions().reshape((-1, 4))[:self.num_particles, :3]
-        # keypoints_3d = {key: all_positions[value[0]] for key, value in gt_keypoint_indices.items()}
-        # print(keypoints_3d)
-        # keypoints_3d = {key: value[0] for value in self.current_task.get_k  }
-
-        actions = shirt_folding_heuristic(keypoints_3d)
-        # print(actions)
-        # exit(0)
-        
-        for action in actions:
-
-            if len(action) == 1:
-                a = action[0]
-                pick = a['pick']
-                place = a['place']
-                self.pick_and_place_primitive(pick, place, lift_height=0.25)
-            
-            if len(action) == 2:
-                left_a = action[0]
-                right_a = action[1]
-
-                left_pick = left_a['pick']
-                left_place = left_a['place']
-
-                right_pick = right_a['pick']
-                right_place = right_a['place']
-
-                self.double_arm_pick_and_place_primitive(left_pick, left_place, right_pick, right_place, lift_height=0.25)
-
-        print("[SimEnv] Folding done")
-
-        # print("Terminating")
-        # log = True
-        # while True:
-        #     hashstring = hashlib.sha1()
-        #     hashstring.update(str(time.time()).encode('utf-8'))
-        #     vis_dir = f"{self.log_dir}/videos/{hashstring.hexdigest()[:10]}"
-        #     if not os.path.exists(vis_dir):
-        #         break
-        # pathlib.Path(vis_dir).mkdir(parents=True, exist_ok=True)
-        # for key, frames in self.env_video_frames.items():
-        #     if len(frames) == 0:
-        #         continue
-        #     path = f'{vis_dir}/{key}_{len(frames)}.mp4'
-        #     with imageio.get_writer(path, mode='I', fps=24) as writer:
-        #         for frame in tqdm(frames, desc=f'Dumping {key} frames'):
-        #             writer.append_data(frame)
-                    
-        return 
-
-        # return (retval, self.ray_handle)
 
     def step(self, value_maps):
 
@@ -1487,7 +1484,9 @@ class SimEnv:
         self.reset_end_effectors()
 
         return obs
-
+    
+    #######################################
+    ##### low-level action primitives ##### 
     def movep(self, pos, speed=None, limit=1000, min_steps=None, eps=1e-4):
         if speed is None:
             if self.dump_visualizations:
@@ -1538,6 +1537,8 @@ class SimEnv:
             self.grasp_states = grasp
         else:
             raise Exception()
+    ##### low-level action primitives #####
+    #######################################
 
     # @profile
     def on_episode_end(self, log=False):
@@ -1595,6 +1596,9 @@ class SimEnv:
         self.ray_handle = {"val": id}
 
 class RLEnv(gym.Env, SimEnv):
+    """
+    Gym environment for cloth manipulation tasks
+    """
     def __init__(self, **kwargs):
         SimEnv.__init__(self, **kwargs )
         self.action_space = gym.spaces.MultiDiscrete([len(self.scale_factors) * self.num_rotations, self.obs_dim, self.obs_dim])
@@ -1644,7 +1648,7 @@ class RLEnv(gym.Env, SimEnv):
         p1, p2 = reach_points[:2]
 
         if (p1 is None) or (p2 is None):
-            print("\n [SimEnv] Invalid pickpoints \n", primitive, p1, p2)
+            print("\n [ClothActionGym] Invalid pickpoints \n", primitive, p1, p2)
             raise ValueError("Invalid pickpoints")
 
         action_kwargs = {
@@ -1683,7 +1687,7 @@ class RLEnv(gym.Env, SimEnv):
                 p2=action_params['p2'])
         except ValueError as e:
             raise ValueError("Reach pos none")
-            # print(" \n [SimEnv] Invalid reachability, resetting \n")
+            # print(" \n [ClothActionGym] Invalid reachability, resetting \n")
             # self.reset()
 
         if primitive == 'place':
@@ -1693,7 +1697,7 @@ class RLEnv(gym.Env, SimEnv):
             action_kwargs['action_visualization'] = \
                 action_params['get_action_visualization_fn ']()
         except Exception as e:
-            logging.debug("[RLEnv] Don't need action_visualization")
+            logging.debug("[CLOt] Don't need action_visualization")
 
         self.log_step_stats(action_kwargs)
 
@@ -1726,7 +1730,7 @@ class RLEnv(gym.Env, SimEnv):
 
         if action_primitive is not None and action is not None:
             if (self.current_timestep >= self.episode_length - 1) and self.fold_finish:
-                print("[SimEnv] Folding cloth")
+                print("[ClothActionGym] Folding cloth")
                 self.fold()
             else:
                 self.action_handlers[action_primitive](**action)
@@ -1754,7 +1758,7 @@ class RLEnv(gym.Env, SimEnv):
         if terminate:
             self.terminate = True
 
-        logging.info(f'[RLEnv] reward: {reward}')
+        logging.info(f'[ClothActionGym] reward: {reward}')
         try:
             self.episode_memory.add_rewards_and_termination(
                 reward, self.terminate)
@@ -1825,7 +1829,7 @@ class RLEnv(gym.Env, SimEnv):
         # find the number of
 
         if self.recreate_verts is not None:
-            print("[SimEnv] Recreating verts, shape: ", self.recreate_verts.shape)
+            print("[ClothActionGym] Recreating verts, shape: ", self.recreate_verts.shape)
             self.set_particle_pos(self.recreate_verts)
 
         self.action_tool.reset([0.2, 0.5, 0.0])

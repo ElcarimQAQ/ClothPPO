@@ -1,4 +1,4 @@
-from .simEnv import SimEnv, RLEnv
+from .ClothActionGym import SimEnv, RLEnv
 from gymnasium.envs.registration import register
 
 
