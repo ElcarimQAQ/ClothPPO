@@ -5,7 +5,7 @@ import pprint
 
 from gymnasium.spaces import Box
 
-sys.path.append('/home/lbyang/workspace/cloth-funnels')
+sys.path.append('/home/lbyang/workspace/ClothPPO')
 from cloth_funnels.utils.utils import (
     setup_actor,
     setup_dataset,

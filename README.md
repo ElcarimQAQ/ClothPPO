@@ -18,7 +18,14 @@ If you are familiar with Docker, we have also open-sourced the Docker image for 
 
 ```bash
 docker pull elcarimqaq/clothppo 
+docker compose up
 ```
+After entering Docker, the already compiled simulation is located in the /PyFlex directory.
+Link it to the current directory:
+```bash
+ln -s /PyFlex/ ./PyFlex
+```
+
 
 # Model
 
@@ -27,7 +34,7 @@ The model checkpoint is shared via [Baidu Netdisk](https://pan.baidu.com/s/147WW
 # Evaluate
 
 ```bash
- . ./eval_ppo.sh clothppo
+ . ./eval.sh clothppo
 ```
 
 # Train

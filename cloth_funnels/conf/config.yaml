@@ -46,6 +46,7 @@ constant_positional_enc: True
 
 #nocs 
 nocs_mode: collapsed
+keypoint_model_path: ./models/keypoint_model.ckpt
 
 # pretrain:
 pretrain_epochs: 

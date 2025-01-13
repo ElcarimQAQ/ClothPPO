@@ -5,13 +5,13 @@ EXP_NAME=clothppo
 CHECKPOINT_DIR="./models/"
 TASK="multi-longsleeve-eval"
 
-CHECKPOINT_PREFIX="v1.2-01-07-0321-checkpoint_"
+CHECKPOINT_PREFIX="ClothPPO"
 START_INDEX=42
 END_INDEX=42
 
 if [ "$1" = "clothppo" ]; then
   CHECKPOINT_PATH="${CHECKPOINT_DIR}ClothPPO.pth"
-  NAME="${TASK}-${EXP_NAME}-ClothPPO"
+  NAME="${TASK}-clothppo"
   python cloth_funnels/run_ppo.py \
           name="${NAME}" \
           load="${CHECKPOINT_PATH}" \
@@ -20,13 +20,12 @@ if [ "$1" = "clothppo" ]; then
           num_processes=5 \
           episode_length=10 \
           fold_finish=False \
-          dump_visualizations=False \
+          dump_visualizations=True \
           ray_local_mode=False \
           gui=False \
           resume=False \
           wandb=disabled \
           action_primitives='[place]' \
-          log_dir="./all_experiments/" \
           test_dataset_size=200
 
     python cloth_funnels/environment/visualize.py ./*experiments/*${NAME}/replay_buffer.hdf5 n

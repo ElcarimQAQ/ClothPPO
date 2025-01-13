@@ -1,7 +1,7 @@
-export CUDA_VISIBLE_DEVICES=2
+export CUDA_VISIBLE_DEVICES=0
 . ./prepare.sh
 python cloth_funnels/run_ppo.py\
-    name="pretrained-mlp1-length-rewardsaclemax5-0.9-unravel-place" \
+    name="train-clothppo" \
     load=./models/longsleeve_canonicalized_alignment.pth \
     num_processes=1 \
     episode_length=10 \
@@ -19,7 +19,6 @@ python cloth_funnels/run_ppo.py\
     max_epoch=100 \
     seed=42 \
     repeat_per_collect=5 \
-    log_dir="./all_experiments/" \
     cont=None \
     resume=False \
     test_processes=6 \
